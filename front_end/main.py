@@ -2,11 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import os
-import torch
-import detectron2
-from detectron2 import model_zoo
-from detectron2.config import get_cfg
-from detectron2.config import CfgNode as CN
 import json
 import random
 from PIL import Image
@@ -25,12 +20,6 @@ import argparse
 from utils import get_images_list, get_placeholder_params, load_augmentations_config, fill_placeholders, fig2img, get_current_time_down_to_microsec
 from visuals import show_credentials, show_docstring, show_random_params, show_transform_control, get_transformations_params, get_transformations_params_custom
 from control import select_checkbox, select_min_max, select_num_interval, select_radio, select_RGB, select_several_nums, replace_none, select_image, select_transformations
-from kkimgaug.lib.aug_det2 import Mapper
-from detectron2.engine import DefaultPredictor
-from detectron2.utils.visualizer import ColorMode
-from detectron2.utils.visualizer import Visualizer
-from detectron2.data.datasets import register_coco_instances
-from detectron2.data import MetadataCatalog, DatasetCatalog
 from numpy import asarray
 
 
@@ -127,6 +116,7 @@ def dataset_sidebar():
     return selected_dataset_path, selected_annot_path
 
 def image_from_mapper(cfg, dataset, metadata):
+    from kkimgaug.lib.aug_det2 import Mapper
     # mapper set
     if cfg.ALBUMENTATION_AUG_PATH is not None:
         mapper = Mapper(cfg, True, config=cfg.ALBUMENTATION_AUG_PATH, is_config_type_official=True)
@@ -160,6 +150,16 @@ def image_from_mapper(cfg, dataset, metadata):
     return mapper_img, out_mapper_annot.get_image()
 
 def training_mode():
+    import torch
+    import detectron2
+    from detectron2 import model_zoo
+    from detectron2.config import get_cfg
+    from detectron2.config import CfgNode as CN
+    from detectron2.engine import DefaultPredictor
+    from detectron2.utils.visualizer import ColorMode
+    from detectron2.utils.visualizer import Visualizer
+    from detectron2.data.datasets import register_coco_instances
+    from detectron2.data import MetadataCatalog, DatasetCatalog
 
     from detectron2.modeling.roi_heads import keypoint_head
     from detectron2.modeling.roi_heads import mask_head

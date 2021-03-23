@@ -5,7 +5,7 @@ Data generator and Object Detection using BlenderProc and Detectron2
 
 Use venv if you need it.
 ```
-pip install -r requirements.txt
+pip install -r requirements/dev.txt
 git clone https://github.com/DLR-RM/BlenderProc.git
 
 # skip this if you dont want sample haven dataset

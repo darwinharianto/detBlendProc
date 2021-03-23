@@ -2,5 +2,5 @@
 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu102/torch1.7/index.html
 torch==1.7.1
 torchvision==0.8.2
-opencv-contrib-python==4.5.1.48
-opencv-python==4.5.1.48
+opencv-contrib-python==4.2.0.32
+opencv-python==4.2.0.32

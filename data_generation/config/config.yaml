@@ -1,0 +1,43 @@
+modules:
+- config:
+    global:
+      output_dir: /home/nizar/Desktop/workspace/pipeBlenderDetectronAlbum/dataset/
+  module: main.Initializer
+- config:
+    path: /home/nizar/Desktop/workspace/pipeBlenderDetectronAlbum/BlenderProc/examples/coco_annotations/scene.blend
+  module: loader.BlendLoader
+- config:
+    cf_set_world_category_id: 0
+  module: manipulators.WorldManipulator
+- config:
+    lights:
+    - energy: 1000
+      location:
+      - 5
+      - -5
+      - 5
+      type: POINT
+  module: lighting.LightLoader
+- config:
+    file_format: location rotation/value
+    intrinsics:
+      fov: 1
+    path: /home/nizar/Desktop/workspace/pipeBlenderDetectronAlbum/BlenderProc/examples/coco_annotations/camera_positions
+  module: camera.CameraLoader
+- config:
+    output_key: colors
+  module: renderer.RgbRenderer
+- config:
+    map_by:
+    - instance
+    - class
+  module: renderer.SegMapRenderer
+- config:
+    mask_encoding_format: polygon
+  module: writer.CocoAnnotationsWriter
+setup:
+  blender_install_path: /home_local/<env:USER>/blender/
+  pip:
+  - h5py
+  - scikit-image
+version: 3

@@ -127,3 +127,11 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+
+# custom data
+.DS_Store
+BlenderProc/
+pipe_env/
+result/*
+dataset/*

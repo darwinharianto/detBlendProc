@@ -1,0 +1,67 @@
+modules:
+- config:
+    global:
+      output_dir: /home/nizar/Desktop/workspace/detBlendPipe/dataset/
+  module: main.Initializer
+- config:
+    path: /home/nizar/Desktop/workspace/detBlendPipe/BlenderProc/resources/haven/models/ArmChair_01/ArmChair_01.blend
+  module: loader.BlendLoader
+- config:
+    cf_set_world_category_id: 0
+  module: manipulators.WorldManipulator
+- config:
+    cp_category_id: 1
+    selector:
+      conditions:
+        name: Armchair_01
+        type: MESH
+      provider: getter.Entity
+  module: manipulators.EntityManipulator
+- config:
+    data_path: /home/nizar/Desktop/workspace/detBlendPipe/BlenderProc/resources/haven
+  module: loader.HavenEnvironmentLoader
+- config:
+    lights:
+    - energy: 1000
+      location:
+      - 5
+      - -5
+      - 5
+      type: POINT
+  module: lighting.LightLoader
+- config:
+    cam_poses:
+    - location:
+        center:
+        - 0
+        - 0
+        - 0
+        mode: SURFACE
+        part_sphere_vector:
+        - 1
+        - 0
+        - 0
+        provider: sampler.PartSphere
+        radius: 3
+      number_of_samples: 2
+      rotation:
+        format: look_at
+        value:
+          provider: getter.POI
+  module: camera.CameraSampler
+- config:
+    output_key: colors
+  module: renderer.RgbRenderer
+- config:
+    map_by:
+    - instance
+    - class
+  module: renderer.SegMapRenderer
+- config:
+    mask_encoding_format: polygon
+  module: writer.CocoAnnotationsWriter
+setup:
+  blender_install_path: /home_local/<env:USER>/blender/
+  pip:
+  - h5py
+version: 3

@@ -45,7 +45,7 @@ jupyter-core==4.7.1
 jupyterlab-pygments==0.1.2
 jupyterlab-widgets==1.0.0
 kiwisolver==1.3.1
-kkimgaug==1.0.4
+kkimgaug @ git+https://github.com/kazukingh01/kkimgaug.git@c08d11e7b46b1e4906b55c51c664403bac6fa57b
 Markdown==3.3.4
 MarkupSafe==1.1.1
 matplotlib==3.3.4

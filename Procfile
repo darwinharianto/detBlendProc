@@ -1,1 +1,1 @@
-web: sh setup.sh && git clone https://github.com/DLR-RM/BlenderProc.git && streamlit run StreamLitFakeNews.py
+web: sh setup.sh && git clone https://github.com/DLR-RM/BlenderProc.git && streamlit run front_end/main.py

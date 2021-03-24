@@ -1,3 +1,8 @@
+-f https://download.pytorch.org/whl/torch_stable.html
+-f https://dl.fbaipublicfiles.com/detectron2/wheels/cpu/torch1.7/index.html
+detectron2==0.4+cpu
+torch==1.7.1+cpu 
+torchvision==0.8.2+cpu
 absl-py==0.12.0
 albumentations==0.5.2
 altair==4.1.0

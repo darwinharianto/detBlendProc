@@ -158,9 +158,6 @@ testpath==0.4.4
 tifffile==2021.1.14
 toml==0.10.0
 toolz==0.10.0
-torch==1.7.1
-torchaudio==0.7.2
-torchvision==0.8.2
 tornado==5.1.1
 tqdm==4.56.0
 traitlets==5.0.5

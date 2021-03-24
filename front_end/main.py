@@ -641,20 +641,31 @@ def aug_gen_mode():
             transform = A.ReplayCompose(transforms)
 
         import itertools
-        for item in itertools.chain.from_iterable([transform]):
-            if issubclass(item.__class__, A.BasicTransform):
-                item.always_apply = True
-
-        st.write(transform)
+        from collections.abc import Iterable
+        if isinstance(transform, Iterable):
+            for item in itertools.chain.from_iterable(transform):
+                if issubclass(item.__class__, A.BasicTransform):
+                    item.always_apply = True
+        else:
+            for item in transform:
+                if issubclass(item.__class__, A.BasicTransform):
+                    item.always_apply = True
+                
         st.text('Source Image')
         st.image(image)
         st.text('Augmented Image')
         st.image(transform(image=image)['image'])
 
-        for item in itertools.chain.from_iterable([transform]):
-            if issubclass(item.__class__, A.BasicTransform):
-                item.always_apply = False
 
+        if isinstance(transform, Iterable):
+            for item in itertools.chain.from_iterable(transform):
+                if issubclass(item.__class__, A.BasicTransform):
+                    item.always_apply = False
+        else:
+            for item in transform:
+                if issubclass(item.__class__, A.BasicTransform):
+                    item.always_apply = False
+        
         st.write(transform._to_dict())
         
         if st.sidebar.button("Save"):

@@ -18,10 +18,30 @@ import albumentations as A
 import cv2
 import argparse
 from utils import get_images_list, get_placeholder_params, load_augmentations_config, fill_placeholders, fig2img, get_current_time_down_to_microsec
-from visuals import show_credentials, show_docstring, show_random_params, show_transform_control, get_transformations_params, get_transformations_params_custom
+from visuals import show_credentials, show_docstring, show_random_params, show_transform_control, get_transformations_params, get_transformations_params_group
 from control import select_checkbox, select_min_max, select_num_interval, select_radio, select_RGB, select_several_nums, replace_none, select_image, select_transformations
 from numpy import asarray
 
+
+
+
+def send_command_to_screen(screen_name, command):
+    process = subprocess.Popen(['screen', '-S', screen_name, '-d', '-m'], stdout=subprocess.PIPE)
+    err_code = process.wait()
+    
+    if err_code == 0:
+        os.system(command)  
+        st.success('Train command success. Check with screen -r')
+    else:
+        st.warning('Failed, To train, contact developer.')
+    
+
+def save_aug_transform(transform, file_name):
+    coco_transform = A.ReplayCompose(transform.transforms,
+    bbox_params=A.BboxParams(format='coco', min_area=0, min_visibility=0.1, label_fields=['label_bbox']),
+    keypoint_params=A.KeypointParams(format='xy', label_fields=['label_kpt'], remove_invisible=True, angle_in_degrees=True)
+    )
+    A.save(coco_transform, file_name)
 
 def get_random_image_from_coco(json_annot):
     
@@ -76,22 +96,38 @@ def predict_image_show_annot(image, predictor, metadata=None):
     image_res = out.get_image()[:, :, ::-1]
     return image_res
 
+def show_ground_truth_image_with_annot(dataset, metadata):
+    from detectron2.utils.visualizer import Visualizer
+
+    ori_img = asarray(Image.open(dataset['file_name']))
+    visualizer = Visualizer(ori_img, metadata=metadata, scale=1)
+    out_ori = visualizer.draw_dataset_dict(dataset)
+    ori_with_annot = out_ori.get_image()
+
+    return ori_img, ori_with_annot
+
 def register_detectron_data(cfg):
+
+    from detectron2.data.datasets import register_coco_instances
+    from detectron2.data import MetadataCatalog, DatasetCatalog
     try:
         DatasetCatalog.remove(cfg.TRAIN_MODEL_NAME)
         MetadataCatalog.remove(cfg.TRAIN_MODEL_NAME)
     except KeyError:
         print("Data does not exist, nothing removed") 
-    register_coco_instances(cfg.TRAIN_MODEL_NAME, {}, cfg.ANNOT_PATH, cfg.IMAGE_PATH)
+    
+    with open(cfg.ANNOT_PATH, 'r') as f:
+        annot = json.loads(f.read())
+
+    extra_metadata = {
+        "keypoint_names": annot["categories"][0]['keypoints'],
+        "keypoint_flip_map": [],
+        }  if 'keypoints' in annot["categories"][0] else {}
+    
+    register_coco_instances(cfg.TRAIN_MODEL_NAME, extra_metadata, cfg.ANNOT_PATH, cfg.IMAGE_PATH)
     metadata_catalog = MetadataCatalog.get(cfg.TRAIN_MODEL_NAME)
     dataset_catalog = DatasetCatalog.get(cfg.TRAIN_MODEL_NAME)
     
-    with open(cfg.ANNOT_PATH, 'r') as f:
-        asd = json.loads (f.read())
-    if 'keypoints' in asd["categories"][0]:
-        MetadataCatalog.get(cfg.TRAIN_MODEL_NAME).keypoint_names = asd["categories"][0]['keypoints']
-        MetadataCatalog.get(cfg.TRAIN_MODEL_NAME).keypoint_flip_map = []
-
     return dataset_catalog, metadata_catalog
 
 def dataset_sidebar():
@@ -117,6 +153,7 @@ def dataset_sidebar():
 
 def image_from_mapper(cfg, dataset, metadata):
     from kkimgaug.lib.aug_det2 import Mapper
+    from detectron2.utils.visualizer import Visualizer
     # mapper set
     if cfg.ALBUMENTATION_AUG_PATH is not None:
         mapper = Mapper(cfg, True, config=cfg.ALBUMENTATION_AUG_PATH, is_config_type_official=True)
@@ -149,46 +186,52 @@ def image_from_mapper(cfg, dataset, metadata):
 
     return mapper_img, out_mapper_annot.get_image()
 
-def training_mode():
-    import torch
-    import detectron2
-    from detectron2 import model_zoo
-    from detectron2.config import get_cfg
-    from detectron2.config import CfgNode as CN
-    from detectron2.engine import DefaultPredictor
-    from detectron2.utils.visualizer import ColorMode
-    from detectron2.utils.visualizer import Visualizer
-    from detectron2.data.datasets import register_coco_instances
-    from detectron2.data import MetadataCatalog, DatasetCatalog
 
+def get_default_head_list():
+    
+    from detectron2 import model_zoo
     from detectron2.modeling.roi_heads import keypoint_head
     from detectron2.modeling.roi_heads import mask_head
     from detectron2.modeling.roi_heads import box_head
     from detectron2.modeling.roi_heads import roi_heads
 
-    
-
+    # detectron2 model zoo list
     model_list = [model for model in model_zoo.model_zoo._ModelZooUrls.CONFIG_PATH_TO_URL_SUFFIX]
 
+    # detectron2 kpt list
     except_kpt = ['ROI_KEYPOINT_HEAD_REGISTRY', 'build_keypoint_head', 'BaseKeypointRCNNHead']
     keypoint_head_list = [kpt_heads for kpt_heads in keypoint_head.__all__ if kpt_heads not in except_kpt]
 
+    # detectron2 box head list
     except_box = ['ROI_BOX_HEAD_REGISTRY', 'build_box_head', 'BaseBoxRCNNHead']
     box_head_list = [box_heads for box_heads in box_head.__all__ if box_heads not in except_box]
     # default value is empty
     box_head_list.append("")
 
+    # detectron2 mask head list
     except_mask = ['ROI_MASK_HEAD_REGISTRY', 'build_mask_head', 'BaseMaskRCNNHead']
     mask_head_list = [mask_heads for mask_heads in mask_head.__all__ if mask_heads not in except_mask]
 
+    # detectron2 roi head list
     except_roi = []
     roi_head_list = [roi_head for roi_head in roi_heads.ROI_HEADS_REGISTRY._obj_map if roi_head not in except_roi]
+    
+    return model_list, roi_head_list, box_head_list, mask_head_list, keypoint_head_list
+
+def training_mode():
+    import torch
+    import detectron2
+    from detectron2.config import get_cfg
+    from detectron2.utils.visualizer import ColorMode
+    from detectron2.utils.visualizer import Visualizer
+    from detectron2.data.datasets import register_coco_instances
+    from detectron2.data import MetadataCatalog, DatasetCatalog
+    from detectron2 import model_zoo
 
 
-    cfg = get_cfg()
 
+    
     st.title('TRAIN DATASET')
-
 
     # Sidebar selection
     selected_dataset_path, selected_annot_path = dataset_sidebar()
@@ -198,52 +241,31 @@ def training_mode():
         'Augmentation',
         [(item if 'augmentations_src.json' not in item else 'None')  for item in os.listdir(aug_path) if (item.endswith('.json') and ~('src' in item))]
     )
-    
-    if augmentation_cfg != "None":
-        selected_aug_path = os.path.join(aug_path, augmentation_cfg)
-        loaded_transform = A.load(selected_aug_path)
-        cfg.ALBUMENTATION_AUG_PATH = selected_aug_path
-    else:
-        selected_aug_path = None
-        loaded_transform = None
-        cfg.ALBUMENTATION_AUG_PATH = None
-
-
-
     mode = st.sidebar.selectbox(
         'Detection mode',
         ['Image', 'Text - Not implemented']
     )
+    # This should be based with mode, if text or if detectron2
+    model_list, roi_head_list, box_head_list, mask_head_list, keypoint_head_list = get_default_head_list()
 
-    cfg.ANNOT_PATH = selected_annot_path
-    cfg.IMAGE_PATH = selected_dataset_path
-    cats = get_ann_details_from_dataset(json_annot=selected_annot_path)
-    
     model = st.sidebar.selectbox(
         'Desired model',
         model_list
     )
     st.text(f'Selected model: {model}')
+    cfg = get_cfg()
     cfg.merge_from_file(model_zoo.get_config_file(model))
-    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(model)
+    cats = get_ann_details_from_dataset(json_annot=selected_annot_path) 
 
     train_model_name = st.text_input('Unique model name', f'generic_{model}')
-    cfg.TRAIN_MODEL_NAME = train_model_name
-
-    cfg.DATASETS.TRAIN = (train_model_name,)
-    cfg.DATASETS.TEST = ()  # no metrics implemented for this dataset
-
     output_dir =  st.sidebar.text_input(
         'Output Directory',
         value= 'result'
     )
-    cfg.OUTPUT_DIR = output_dir
-
     min_size_train = st.sidebar.text_input(
         'Min input size train',
         value=(800,)
     )
-
     if type(eval(min_size_train)).__name__ == 'tuple':
         print("Fine")
     else:
@@ -252,7 +274,6 @@ def training_mode():
         'Max input size train',
         value=1333
     )
-
     min_size_test = st.sidebar.text_input(
         'Min input size test',
         value=800
@@ -261,130 +282,108 @@ def training_mode():
         'Max input size test',
         value=1333
     )
-
-    cfg.INPUT.MIN_SIZE_TRAIN = eval(min_size_train)
-    cfg.INPUT.MAX_SIZE_TRAIN = int(max_size_train)
-    cfg.INPUT.MIN_SIZE_TEST = int(min_size_test)
-    cfg.INPUT.MAX_SIZE_TEST = int(max_size_test)
-
     max_iter =  st.sidebar.text_input(
         'Maximum iteration',
         value=1000
     )
-    cfg.SOLVER.MAX_ITER = (
-        int(max_iter)
-    )  # 300 iterations seems good enough, but you can certainly train longer
-
-    # load cfg
-
     # model related settings
     roi_head = st.sidebar.selectbox(
         'ROI head',
         roi_head_list,
         index=roi_head_list.index(cfg.MODEL.ROI_HEADS.NAME)
     )
-    cfg.MODEL.ROI_HEADS.NAME = roi_head
 
     num_classes = st.sidebar.text_input(
         'Total classes',
         value=len(cats)
     )
-    cfg.MODEL.ROI_HEADS.NUM_CLASSES = num_classes
-
     box_head = st.sidebar.selectbox(
         'Box head',
         box_head_list,
         index=box_head_list.index(cfg.MODEL.ROI_BOX_HEAD.NAME)
     )
-
-
-    if cfg.MODEL.MASK_ON:
-        mask_head = st.sidebar.selectbox(
-            'Mask head',
-            mask_head_list, 
-            index=mask_head_list.index(cfg.MODEL.ROI_MASK_HEAD.NAME)
-        )
-        cfg.MODEL.ROI_MASK_HEAD.NAME = mask_head
-
-    if cfg.MODEL.KEYPOINT_ON:
-        kpt_head = st.sidebar.selectbox(
-            'Keypoint head',
-            keypoint_head_list,
-            index=keypoint_head_list.index(cfg.MODEL.ROI_KEYPOINT_HEAD.NAME)
-        )
-        cfg.MODEL.ROI_KEYPOINT_HEAD.NAME = kpt_head
-        cfg.MODEL.ROI_KEYPOINT_HEAD.NUM_KEYPOINTS = len(cats[0]['keypoints'])
-
+    mask_head = st.sidebar.selectbox(
+        'Mask head',
+        mask_head_list, 
+        index=mask_head_list.index(cfg.MODEL.ROI_MASK_HEAD.NAME)
+    ) if cfg.MODEL.MASK_ON else mask_head_list.index(cfg.MODEL.ROI_MASK_HEAD.NAME)
+    kpt_head = st.sidebar.selectbox(
+        'Keypoint head',
+        keypoint_head_list,
+        index=keypoint_head_list.index(cfg.MODEL.ROI_KEYPOINT_HEAD.NAME)
+    ) if cfg.MODEL.KEYPOINT_ON else keypoint_head_list.index(cfg.MODEL.ROI_KEYPOINT_HEAD.NAME)
     num_worker = st.sidebar.text_input(
         'Number of worker',
         value=2
     )
-    cfg.DATALOADER.NUM_WORKERS = int(num_worker)
-
     ims_per_batch = st.sidebar.text_input(
         'IMS per batch',
         value=2
     )
-    cfg.SOLVER.IMS_PER_BATCH = int(ims_per_batch)
-
     base_lr =  st.sidebar.text_input(
         'Base Learning Rate',
         value=0.002
     )
-    cfg.SOLVER.BASE_LR = float(base_lr)
-
     checkpoint_period = st.sidebar.text_input(
         'Checkpoint period',
         value = 1000   
     )
-    cfg.SOLVER.CHECKPOINT_PERIOD = int(checkpoint_period)
-
     vis_period =  st.sidebar.text_input(
         'Visualize dataset on train period',
         value = 0
     )
-    cfg.VIS_PERIOD = int(vis_period)
-
     batch_size_per_image =  st.sidebar.text_input(
         'Batch size per image',
         value=128
     )
-    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = (
-        int(batch_size_per_image)
-    )  # faster, and good enough for this toy dataset
-    cfg.INPUT.RANDOM_FLIP = "none"
-
     solver_steps = st.sidebar.text_input(
         'Solver steps',
         value = cfg.SOLVER.STEPS
     )
 
+    cfg.ALBUMENTATION_AUG_PATH = None if augmentation_cfg == None else os.path.join(aug_path, augmentation_cfg)
+    cfg.ANNOT_PATH = selected_annot_path
+    cfg.IMAGE_PATH = selected_dataset_path
+    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(model)
+    cfg.TRAIN_MODEL_NAME = train_model_name
+    cfg.DATASETS.TRAIN = (train_model_name,)
+    cfg.DATASETS.TEST = ()  # no metrics implemented for this dataset
+    cfg.OUTPUT_DIR = output_dir
+    cfg.INPUT.MIN_SIZE_TRAIN = eval(min_size_train)
+    cfg.INPUT.MAX_SIZE_TRAIN = int(max_size_train)
+    cfg.INPUT.MIN_SIZE_TEST = int(min_size_test)
+    cfg.INPUT.MAX_SIZE_TEST = int(max_size_test)
+    cfg.SOLVER.MAX_ITER = int(max_iter)
+    cfg.MODEL.ROI_HEADS.NAME = roi_head
+    cfg.MODEL.ROI_HEADS.NUM_CLASSES = num_classes
+    cfg.MODEL.ROI_MASK_HEAD.NAME = mask_head
+    cfg.MODEL.ROI_KEYPOINT_HEAD.NAME = kpt_head
+    # for now only allows one Class of keypoints
+    cfg.MODEL.ROI_KEYPOINT_HEAD.NUM_KEYPOINTS = len(cats[0]['keypoints']) if cfg.MODEL.KEYPOINT_ON else cfg.MODEL.ROI_KEYPOINT_HEAD.NUM_KEYPOINTS
+    cfg.DATALOADER.NUM_WORKERS = int(num_worker)
+    cfg.SOLVER.IMS_PER_BATCH = int(ims_per_batch)
+    cfg.SOLVER.BASE_LR = float(base_lr)
+    cfg.SOLVER.CHECKPOINT_PERIOD = int(checkpoint_period)
+    cfg.VIS_PERIOD = int(vis_period)
+    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = int(batch_size_per_image)
+    cfg.INPUT.RANDOM_FLIP = "none"
     cfg.SOLVER.STEPS = solver_steps
 
     # Data Visualization
     # register metadata, then load dataset and metadata
+    ori_col1, ori_col2 = st.beta_columns(2)
+    map_col1, map_col2 = st.beta_columns(2)
     dataset_catalog, metadata = register_detectron_data(cfg)
     
     # original set
-    dataset = dataset_catalog[0]
-
-    ori_img = asarray(Image.open(dataset['file_name']))
-
-    visualizer = Visualizer(ori_img, metadata=metadata, scale=1)
-    out_ori = visualizer.draw_dataset_dict(dataset)
-    ori_with_annot = out_ori.get_image()
-
-
-    ori_col1, ori_col2 = st.beta_columns(2)
-    map_col1, map_col2 = st.beta_columns(2)
-
+    ori_img, ori_with_annot = show_ground_truth_image_with_annot(dataset_catalog[0], metadata)
     ori_col1.header("Original")
     ori_img_frame = ori_col1.image(ori_img, use_column_width=True) # normal image
     ori_col2.header("Original with annot")
     ori_img_annot_frame = ori_col2.image(ori_with_annot, use_column_width=True) # normal image
 
 
-    mapper_img, mapper_img_annot = image_from_mapper(cfg, dataset, metadata)
+    mapper_img, mapper_img_annot = image_from_mapper(cfg, dataset_catalog[0], metadata)
     map_col1.header("Model input")
     mapper_frame = map_col1.image(mapper_img, use_column_width=True) # mapper image
     map_col2.header("Model input annots")
@@ -399,21 +398,14 @@ def training_mode():
         while not stop:
 
             dataset_iterator+=1
-
-            dataset = dataset_catalog[dataset_iterator%len(dataset_catalog)]
-
+            selected_dataset = dataset_catalog[dataset_iterator%len(dataset_catalog)]
             # normal image
-            ori_img = asarray(Image.open(dataset['file_name']))
-            visualizer = Visualizer(ori_img, metadata=metadata, scale=1)
-            out_ori = visualizer.draw_dataset_dict(dataset)
-            ori_with_annot = out_ori.get_image()
-
-
+            ori_img, ori_with_annot = show_ground_truth_image_with_annot(selected_dataset, metadata)
             ori_img_frame.image(ori_img)
             ori_img_annot_frame.image(ori_with_annot)
 
             # augmented image
-            mapper_img, mapper_img_annot = image_from_mapper(cfg, dataset, metadata)
+            mapper_img, mapper_img_annot = image_from_mapper(cfg, selected_dataset, metadata)
             mapper_frame.image(mapper_img, use_column_width=True)
             mapper_annot_frame.image(mapper_img_annot, use_column_width=True)
             
@@ -429,33 +421,31 @@ def training_mode():
     os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
     
     if st.button('Start train', key=None):
-        dump_cfg_path = './detectron2_cfg/cfg_train.yaml'
+        
+        dump_cfg_path = f'./detectron2_cfg/cfg_train_{get_current_time_down_to_microsec()}.yaml'
         with open(dump_cfg_path, 'w') as f:
             f.write(cfg.dump())
         venv_path = os.popen('echo $VIRTUAL_ENV').read().strip()
-        screen_name = f'train_model_{get_current_time_down_to_microsec()}'
-        process = subprocess.Popen(['screen', '-S', screen_name, '-d', '-m'], stdout=subprocess.PIPE)
-        err_code = process.wait()
-        
-        if err_code == 0:
-            # os.system(f"screen -r {screen_name} -X stuff '{venv_path}/bin/python3 ./front_end/train.py {dump_cfg_path}\n'")  
-            st.success('Train command success. Check with screen -r')
-        else:
-            st.warning('Failed, check for error.')
-        
-    
+
+        screen_name = f'train_model_{dump_cfg_path}'
+        command = f"screen -r {screen_name} -X stuff '{venv_path}/bin/python3 ./front_end/train.py {dump_cfg_path}\n'"
+        send_command_to_screen(screen_name = screen_name, command = command)
+
 
 
 def inference_mode():
+    import torch
     import cv2
-    st.title('INFERENCE DATASET')
+    from detectron2.config import CfgNode as CN
+    from detectron2.config import get_cfg
+    from detectron2.engine import DefaultPredictor
+    cfg_path = './detectron2_cfg'
 
+    st.title('INFERENCE DATASET')
     inference_mode = st.sidebar.radio(
         'Inference Type',
         ['From Image Folder', 'Config Dataset']
     )
-    
-    cfg_path = './detectron2_cfg'
     selected_cfg = st.sidebar.selectbox(
         'Configuration',
         os.listdir(cfg_path)
@@ -481,74 +471,43 @@ def inference_mode():
     )
 
     cfg.MODEL.WEIGHTS = os.path.join(model_output,selected_model_list)
-
-    with open(cfg.ANNOT_PATH, 'r') as f:
-            asd = json.loads (f.read())
-    if 'keypoints' in asd["categories"][0]:
-        MetadataCatalog.get(cfg.TRAIN_MODEL_NAME).keypoint_names = asd["categories"][0]['keypoints']
-        MetadataCatalog.get(cfg.TRAIN_MODEL_NAME).keypoint_flip_map = []
-
     st.text(f'Model name: {cfg.TRAIN_MODEL_NAME}')
     
     if inference_mode == 'From Image Folder':
         
         # select datasetpath and annot path
-        selected_dataset_path, selected_annot_path = dataset_sidebar()
+        selected_dataset_path, _ = dataset_sidebar()
+        # dump target for evaluate
+        dump_path = st.sidebar.text_input('Dump target', "./output_eval/")
 
         # register metadata, then load dataset and metadata
-        try:
-            DatasetCatalog.remove(cfg.TRAIN_MODEL_NAME)
-        except KeyError:
-            print("Data does not exist, nothing removed") 
-
-        # register data based on selected items
-        register_coco_instances(cfg.TRAIN_MODEL_NAME, {}, selected_annot_path, selected_dataset_path)
-        metadata = MetadataCatalog.get(cfg.TRAIN_MODEL_NAME)
-        dataset_catalog = DatasetCatalog.get(cfg.TRAIN_MODEL_NAME)
-
+        cfg.IMAGE_PATH = selected_dataset_path
+        dataset_catalog, metadata = register_detectron_data(cfg)
 
         image = get_random_image_from_folder(selected_dataset_path)
-        if image.shape[2] == 4:
-            src_image = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
-        else:
-            src_image = image
-
         predictor = DefaultPredictor(cfg)
-        
-        outputs = predictor(src_image)
+        image_res = predict_image_show_annot(image=image, predictor=predictor, metadata=metadata)
         
         st.text('INPUT IMAGE')
-        source_image = st.image(src_image)
+        source_image = st.image(image)
 
-        # Prediction result
-        v = Visualizer(src_image[:, :, ::-1],
-                    metadata=metadata, 
-        )
-        out = v.draw_instance_predictions(outputs["instances"].to("cpu"))
         st.text('PREDICT IMAGE RESULT')
-        predict_image = st.image(out.get_image()[:, :, ::-1])
+        predict_image = st.image(image_res)
 
         animate = st.button('Animate')
         if animate:
 
+            stop = st.button('Stop Animate')
             my_bar = st.progress(0)
-            all_images = os.listdir(selected_dataset_path)
-            for i, image_name in enumerate(all_images):
-                my_bar.progress(i/len(all_images))
-                st.write(os.path.join(selected_dataset_path, image_name))
-                if image_name.endswith('.json'):
-                    continue
+            all_images = [images for images in os.listdir(selected_dataset_path) if not images.endswith('.json')]
+            while (not stop):
+                for i, image_name in enumerate(all_images):
+                    my_bar.progress((i+1)/len(all_images))
+                    image = io.imread(os.path.join(selected_dataset_path, image_name))
+                    image_res = predict_image_show_annot(image=image, predictor=predictor, metadata=metadata)
+                    source_image.image(image)
+                    predict_image.image(image_res)
 
-                image = io.imread(os.path.join(selected_dataset_path, image_name))
-                image_res = predict_image_show_annot(image=image, predictor=predictor, metadata=metadata)
-
-                source_image.image(image)
-                predict_image.image(image_res)
-                if i==10:
-                    break
-
-        # dump target for evaluate
-        dump_path = st.sidebar.text_input('Dump target', "./output_eval/")
 
         if st.button('Evaluate'):
             from detectron2.evaluation import COCOEvaluator, inference_on_dataset
@@ -556,64 +515,43 @@ def inference_mode():
             from utils import st_stdout
             
             # register data
-            try:
-                DatasetCatalog.remove('eval_item')
-            except KeyError:
-                print("Data does not exist, nothing removed") 
+            dataset_catalog, metadata = register_detectron_data(cfg)
                 
-            register_coco_instances('eval_item', {}, selected_annot_path, selected_dataset_path)
-
-            evaluator = COCOEvaluator("eval_item", None, False, output_dir=dump_path)
-
-            val_loader = build_detection_test_loader(cfg, "eval_item")
-
+            evaluator = COCOEvaluator(cfg.TRAIN_MODEL_NAME, None, False, output_dir=dump_path)
+            val_loader = build_detection_test_loader(cfg, cfg.TRAIN_MODEL_NAME)
             import logging
             from utils import MyHandler
             logger = logging.getLogger('detectron2.evaluation.evaluator')
-            logger.addHandler(MyHandler())   # or: logger.handlers = [MyHandler()]
+            logger.handlers = [MyHandler()]
 
             with st_stdout("code"):
-                # logger.info("asd")
-                print(inference_on_dataset(predictor.model, val_loader, evaluator))
+                asd = inference_on_dataset(predictor.model, val_loader, evaluator)
+                print(asd)
             
-            st.text('Outputs AP result')
 
     elif inference_mode == 'Config Dataset':
 
         # register metadata, then load dataset and metadata
-        try:
-            DatasetCatalog.remove(cfg.TRAIN_MODEL_NAME)
-        except KeyError:
-            print("Data does not exist, nothing removed") 
-        register_coco_instances(cfg.TRAIN_MODEL_NAME, {}, cfg.ANNOT_PATH, cfg.IMAGE_PATH)
-        metadata = MetadataCatalog.get(cfg.TRAIN_MODEL_NAME)
-        dataset_catalog = DatasetCatalog.get(cfg.TRAIN_MODEL_NAME)
-        
-        with open(cfg.ANNOT_PATH, 'r') as f:
-                asd = json.loads (f.read())
-        if 'keypoints' in asd["categories"][0]:
-            MetadataCatalog.get(cfg.TRAIN_MODEL_NAME).keypoint_names = asd["categories"][0]['keypoints']
-            MetadataCatalog.get(cfg.TRAIN_MODEL_NAME).keypoint_flip_map = []
-
+        dataset_catalog, metadata = register_detectron_data(cfg)
 
         # This part shows source image
         st.subheader('Input Image')
         image = io.imread(dataset_catalog[0]['file_name'])
         st.image(image)
 
+        img1, img2 = st.beta_columns(2)
+        
         # this part shows annotated image
-        st.subheader('Ground Truth Image')
-        img = cv2.imread(dataset_catalog[0]["file_name"])
-        visualizer = Visualizer(img[:, :, ::-1], metadata=metadata, scale=1)
-        out = visualizer.draw_dataset_dict(dataset_catalog[0])
-        st.image(out.get_image()[:, :, ::-1])
+        img1.header('Ground Truth Image')
+        _, out_img = show_ground_truth_image_with_annot(dataset_catalog[0], metadata)
+        img1.image(out_img, use_column_width=True)
 
         # this part shows inference result
         predictor = DefaultPredictor(cfg)
         
         image_res = predict_image_show_annot(image=image, predictor=predictor, metadata=metadata)
-        st.subheader('Predict Result')
-        st.image(image_res)
+        img2.header('Predict Result')
+        img2.image(image_res, use_column_width=True)
     
     torch.cuda.empty_cache()
 
@@ -661,7 +599,7 @@ def data_gen_mode():
             random_image = get_random_image_from_coco(coco_data_path)
             st.image(random_image)
         else:
-            st.warning('Generating Process Took Too Long, Open terminal, type screen -r')
+            st.warning('Generating process took too long. To see progress, open terminal, type screen -r')
             venv_path = os.popen('echo $VIRTUAL_ENV').read().strip()
             timer = get_current_time_down_to_microsec()
             screen_name = f'data_generate_{timer}'
@@ -672,10 +610,6 @@ def data_gen_mode():
             if err_code == 0:
                 os.system(f"screen -r {screen_name} -X stuff '{venv_path}/bin/python3 ../BlenderProc/run.py {blend_cfg_file_path}\n'")          
 
-        
-
-
-
 def aug_gen_mode():
     st.title('AUGMENTATION GENERATOR')
 
@@ -684,72 +618,47 @@ def aug_gen_mode():
     if uploaded_file is None:
         st.title("There is no Image")
     else:
-        # select interface type
-        interface_type = "Custom"
 
-        json_file_name_input = st.sidebar.text_input("Insert Json File Name", "aug_file")  #text_area same format
-        json_file_name = os.path.join("augmentations",f"{json_file_name_input}"+'.json')                       
-        
         # select image
         image = asarray(Image.open(uploaded_file))
-        # image was loaded successfully
-        placeholder_params = get_placeholder_params(image)
-    
         # load the config
         augmentations = load_augmentations_config(
-            placeholder_params, "augmentations/augmentations_src.json"
+            get_placeholder_params(image), "augmentations/augmentations_src.json"
         )
 
+        json_file_name_input = st.sidebar.text_input("Insert Json File Name", "aug_file")  #text_area same format
+        json_file_name = os.path.join("augmentations",f"{json_file_name_input}"+'.json')     
+        
         # get the list of transformations names
-        checkbox =  st.sidebar.checkbox("Group Transformation (Experimental)",False)
-        transform_names = select_transformations(augmentations, interface_type, checkbox)
+        checkbox = st.sidebar.checkbox("Group Transformation (Experimental)",False)
+        transform_names = select_transformations(augmentations, checkbox)
         
         if checkbox:
-            transforms = get_transformations_params_custom(transform_names, augmentations)
-
-            st.text('Source Image')
-            st.image(image)
-            
-            st.text('Augmented Image')
+            transforms = get_transformations_params_group(transform_names, augmentations)
             transform = A.ReplayCompose(transforms)
-            for group in transform:
-                group.always_apply = True
-                for aug in group:
-                    aug.always_apply = True
-            
-            st.image(transform(image=image)['image'])
-            
-            for group in transform:
-                group.always_apply = False
-                for aug in group:
-                    aug.always_apply = False
-            
-
         else:
             transforms = get_transformations_params(transform_names, augmentations)
-
-            st.text('Source Image')
-            st.image(image)
-            
-            st.text('Augmented Image')
             transform = A.ReplayCompose(transforms)
-            for aug in transform:
-                aug.always_apply = True
-            
-            
-            st.image(transform(image=image)['image'])
-            
-            for aug in transform:
-                aug.always_apply = False
+
+        import itertools
+        for item in itertools.chain.from_iterable(transform):
+            if issubclass(item.__class__, A.BasicTransform):
+                item.always_apply = True
+
+        st.write(transform)
+        st.text('Source Image')
+        st.image(image)
+        st.text('Augmented Image')
+        st.image(transform(image=image)['image'])
+
+        for item in itertools.chain.from_iterable(transform):
+            if issubclass(item.__class__, A.BasicTransform):
+                item.always_apply = False
 
         st.write(transform._to_dict())
         
         if st.sidebar.button("Save"):
-            coco_transform = A.ReplayCompose(transform.transforms,
-            bbox_params=A.BboxParams(format='coco', min_area=1024, min_visibility=0.1, label_fields=['label_bbox']),
-            keypoint_params=A.KeypointParams(format='xy', label_fields=['label_kpt'], remove_invisible=True, angle_in_degrees=True)
-            )
-            A.save(coco_transform, json_file_name)
+            save_aug_transform(transform, json_file_name)
             st.sidebar.success("File has been saved.")
 
 def proto_mode():
@@ -759,7 +668,6 @@ def proto_mode():
     start = st.button('start')
 
     if start:
-        
         stop = st.button('stop')        
         while not stop:
             st.write(1)

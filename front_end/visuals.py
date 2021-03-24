@@ -56,15 +56,6 @@ def show_random_params(data: dict, interface_type: str = "Professional"):
             ] = applied_params["params"]
         st.write(random_values)
 
-def get_transformations_params(transform_names: list, augmentations: dict) -> list:
-    transforms = []
-    for i, transform_name in enumerate(transform_names):
-        # select the params values
-        st.sidebar.subheader("Params of the " + transform_name)
-        param_values = show_transform_control(augmentations[transform_name], i)
-        transforms.append(getattr(A, transform_name)(**param_values))
-    return transforms
-
 def show_transform_control(transform_params: dict, n_for_hash: int) -> dict:
     #transform_params = augmentation["blur"]
     # [{'defaults': [3, 7], 'limits_list': [3, 100], 'param_name': 'blur_limit', 'type': 'num_interval'}]
@@ -84,24 +75,25 @@ def show_transform_control(transform_params: dict, n_for_hash: int) -> dict:
                 )
     return param_values
 
+def get_transformations_params(transform_names: list, augmentations: dict, offset: int = 0) -> list:
+    
+    transforms = []
+    for i, transform_name in enumerate(transform_names):
+        # select the params values
+        st.sidebar.subheader("Params of the " + transform_name)
+        param_values = show_transform_control(augmentations[transform_name], i+offset*1000)
+        transforms.append(getattr(A, transform_name)(**param_values))
+    return transforms
+
 #change log
-def get_transformations_params_custom(transform_names: list, augmentations: dict) -> list:
+def get_transformations_params_group(transform_names: list, augmentations: dict) -> list:
 
     transforms_all = []
-    
     for group, transform_name_group in enumerate(transform_names):
-        transforms = []
         st.sidebar.subheader(f"Params of the Group {group}")
-        one_param_values = show_transform_control(augmentations["OneOf"], group-100)
-
-        for i, transform_name in enumerate(transform_name_group[1]):
-            # select the params values
-            st.sidebar.subheader("Params of the " + transform_name)
-            param_values = show_transform_control(augmentations[transform_name], i+group*100)
-            transforms.append(getattr(A, transform_name)(**param_values))
+        one_param_values = show_transform_control(augmentations["OneOf"], group-1000)  
+        transforms = get_transformations_params(transform_name_group[1], augmentations, offset=group)
         transforms_all.append(A.OneOf(transforms, **one_param_values))
-
-    
     return transforms_all
 
 def save_json_data(file_name:str,dict:dict):

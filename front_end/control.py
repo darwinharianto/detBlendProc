@@ -89,11 +89,10 @@ def select_checkbox(param_name, defaults, n_for_hash, **kwargs):
     )
     return result
 
-def select_image(path_to_images: str, interface_type: str = "Simple"):
+def select_image(path_to_images: str):
     """ Show interface to choose the image, and load it
     Args:
         path_to_images (dict): path ot folder with images
-        interface_type (dict): mode of the interface used
     Returns:
         (status, image)
         status (int):
@@ -116,7 +115,7 @@ def select_image(path_to_images: str, interface_type: str = "Simple"):
             return 1, 0
         
 
-def select_transformations(augmentations: dict, interface_type: str, is_group: bool) -> list:
+def select_transformations(augmentations: dict, is_group: bool) -> list:
     #Customized
     checkbox = is_group
     all_listed_augmentations = sorted(list(augmentations.keys()))

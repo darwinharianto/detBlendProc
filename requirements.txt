@@ -93,8 +93,6 @@ oauthlib==3.1.0
 omegaconf==2.0.6
 opencensus==0.7.12
 opencensus-context==0.1.2
-opencv-contrib-python==4.5.1.48
-opencv-python==4.5.1.48
 opencv-python-headless==4.5.1.48
 packaging==19.2
 pandas==0.25.3

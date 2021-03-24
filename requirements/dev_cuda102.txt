@@ -3,5 +3,5 @@
 detectron2==0.4+cu102
 torch==1.7.1
 torchvision==0.8.2
-opencv-contrib-python==4.2.0.32
-opencv-python==4.2.0.32
+opencv-contrib-python==4.5.1.48
+opencv-python==4.5.1.48

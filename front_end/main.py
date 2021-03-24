@@ -219,7 +219,6 @@ def get_default_head_list():
     return model_list, roi_head_list, box_head_list, mask_head_list, keypoint_head_list
 
 def training_mode():
-    import torch
     import detectron2
     from detectron2.config import get_cfg
     from detectron2.utils.visualizer import ColorMode
@@ -434,7 +433,6 @@ def training_mode():
 
 
 def inference_mode():
-    import torch
     import cv2
     from detectron2.config import CfgNode as CN
     from detectron2.config import get_cfg
@@ -552,9 +550,11 @@ def inference_mode():
         image_res = predict_image_show_annot(image=image, predictor=predictor, metadata=metadata)
         img2.header('Predict Result')
         img2.image(image_res, use_column_width=True)
-    
-    torch.cuda.empty_cache()
-
+    try:
+        import torch
+        torch.cuda.empty_cache()
+    except:
+        print('torch is not installed')
 
 def data_gen_mode():
     st.title('DATA GENERATOR')
@@ -641,7 +641,7 @@ def aug_gen_mode():
             transform = A.ReplayCompose(transforms)
 
         import itertools
-        for item in itertools.chain.from_iterable(transform):
+        for item in itertools.chain.from_iterable([transform]):
             if issubclass(item.__class__, A.BasicTransform):
                 item.always_apply = True
 
@@ -651,7 +651,7 @@ def aug_gen_mode():
         st.text('Augmented Image')
         st.image(transform(image=image)['image'])
 
-        for item in itertools.chain.from_iterable(transform):
+        for item in itertools.chain.from_iterable([transform]):
             if issubclass(item.__class__, A.BasicTransform):
                 item.always_apply = False
 

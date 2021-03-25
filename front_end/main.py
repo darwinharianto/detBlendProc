@@ -305,12 +305,12 @@ def training_mode():
         'Mask head',
         mask_head_list, 
         index=mask_head_list.index(cfg.MODEL.ROI_MASK_HEAD.NAME)
-    ) if cfg.MODEL.MASK_ON else mask_head_list.index(cfg.MODEL.ROI_MASK_HEAD.NAME)
+    ) if cfg.MODEL.MASK_ON else mask_head_list[mask_head_list.index(cfg.MODEL.ROI_MASK_HEAD.NAME)]
     kpt_head = st.sidebar.selectbox(
         'Keypoint head',
         keypoint_head_list,
         index=keypoint_head_list.index(cfg.MODEL.ROI_KEYPOINT_HEAD.NAME)
-    ) if cfg.MODEL.KEYPOINT_ON else keypoint_head_list.index(cfg.MODEL.ROI_KEYPOINT_HEAD.NAME)
+    ) if cfg.MODEL.KEYPOINT_ON else keypoint_head_list[keypoint_head_list.index(cfg.MODEL.ROI_KEYPOINT_HEAD.NAME)]
     num_worker = st.sidebar.text_input(
         'Number of worker',
         value=2

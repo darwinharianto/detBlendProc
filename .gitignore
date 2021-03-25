@@ -134,4 +134,3 @@ dmypy.json
 BlenderProc/
 pipe_env/
 result/*
-dataset/*

@@ -132,6 +132,7 @@ def register_detectron_data(cfg):
 def dataset_sidebar():
     # Sidebar selection
     dataset_path = './dataset'
+    os.makedirs(dataset_path, exist_ok=True)
     if len(os.listdir(dataset_path)) == 0:
         st.error('No dataset under dataset folder found')
         st.stop()

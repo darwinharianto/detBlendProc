@@ -595,7 +595,7 @@ def data_gen_mode():
             
             output_dir = [module for module in blend_cfg["modules"] if module["module"] == "main.Initializer"][0]["config"]["global"]["output_dir"]
             
-            coco_data_path = os.path.join(output_dir, 'coco_data', 'coco_annotations.json')
+            coco_data_path = os.path.join(output_dir, 'coco_annotations.json')
             random_image = get_random_image_from_coco(coco_data_path)
             st.image(random_image)
         else:

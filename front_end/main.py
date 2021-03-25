@@ -141,7 +141,7 @@ def dataset_sidebar():
         'Training Dataset',
         [item for item in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, item))]
     )
-    selected_dataset_path = os.path.join(dataset_path, dataset)
+    selected_dataset_path = os.path.join(dataset_path, dataset, 'coco_data')
 
     json_annot = st.sidebar.selectbox(
         'Annotation',

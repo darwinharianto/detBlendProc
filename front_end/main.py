@@ -426,7 +426,7 @@ def training_mode():
             f.write(cfg.dump())
         venv_path = os.popen('echo $VIRTUAL_ENV').read().strip()
 
-        screen_name = f'train_model_{dump_cfg_path}'
+        screen_name = f'train_model_{get_current_time_down_to_microsec()}'
         command = f"screen -r {screen_name} -X stuff '{venv_path}/bin/python3 ./front_end/train.py {dump_cfg_path}\n'"
         send_command_to_screen(screen_name = screen_name, command = command)
 

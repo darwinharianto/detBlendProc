@@ -135,3 +135,5 @@ BlenderProc/
 pipe_env/
 result/*
 13/*
+background/*
+output/*

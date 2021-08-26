@@ -1,5 +1,7 @@
 from detectron2.data.datasets import register_coco_instances
 from detectron2.data import MetadataCatalog, DatasetCatalog
+from bg_mapper import BGMapper
+
 from detectron2.data import build_detection_train_loader
 from detectron2.engine import DefaultTrainer
 from detectron2.config import get_cfg
@@ -19,15 +21,16 @@ from detectron2.evaluation import inference_on_dataset, print_csv_format
 from detectron2.utils import comm
 from detectron2.config import LazyConfig, instantiate
 import click
-from kkimgaug.lib.aug_det2 import Mapper
 import json
 import logging
+from PIL import Image
+
 
 class CustomKKTrainer(DefaultTrainer):
 
     def build_train_loader(cls, cfg):
         if cfg.ALBUMENTATION_AUG_PATH is not None:
-            mapper = Mapper(cfg, True, config=cfg.ALBUMENTATION_AUG_PATH, is_config_type_official=True)
+            mapper = BGMapper(cfg, True, background_dir=cfg.BACKGROUND_IMAGE, config=cfg.ALBUMENTATION_AUG_PATH, is_config_type_official=True)
         else:
             mapper = None
         return build_detection_train_loader(cfg, mapper=mapper)

@@ -1,3 +1,4 @@
+from typing import Any
 import detectron2
 import streamlit as st
 import numpy as np
@@ -167,12 +168,12 @@ def dataset_sidebar():
     return selected_dataset_path, selected_annot_path
 
 def image_from_mapper(cfg, dataset, metadata, lazy_conf=False):
-    from kkimgaug.lib.aug_det2 import Mapper
+    from bg_mapper import BGMapper
     from detectron2.utils.visualizer import Visualizer
     from detectron2.data.dataset_mapper import DatasetMapper
     # mapper set
     if cfg.ALBUMENTATION_AUG_PATH is not None:
-        mapper = Mapper(cfg, True, config=cfg.ALBUMENTATION_AUG_PATH, is_config_type_official=True)
+        mapper = BGMapper(cfg, True, background_dir=cfg.BACKGROUND_DIR, config=cfg.ALBUMENTATION_AUG_PATH, is_config_type_official=True)
     elif lazy_conf:
         from detectron2.config import instantiate    
         mapper = instantiate(cfg.dataloader.train.mapper)
@@ -253,17 +254,21 @@ def training_mode():
     from detectron2 import model_zoo
 
 
-
     
     st.title('TRAIN DATASET')
 
     # Sidebar selection
     selected_dataset_path, selected_annot_path = dataset_sidebar()
     aug_path = './augmentations'
+    background_path = './background'
 
     augmentation_cfg = st.sidebar.selectbox(
         'Augmentation',
-        [(item if 'augmentations_src.json' not in item else '')  for item in os.listdir(aug_path) if (item.endswith('.json') and ~('src' in item))]
+        [None] + [item for item in os.listdir(aug_path) if (item.endswith('.json') and ~('src' in item)) and 'augmentations_src.json' not in item]
+    )
+    background_dir = st.sidebar.selectbox(
+        'Background Dir',
+        [None] + [item for item in os.listdir(background_path)]
     )
     mode = st.sidebar.selectbox(
         'Detection mode',
@@ -306,12 +311,26 @@ def training_mode():
 
         val_dict = {}
         
-        for paths in cfg_path("cfg",cfg,[]):
+        do_list = ["IMS_PER_BATCH", "VIS_PERIOD", 
+        "OUTPUT_DIR", "MIN_SIZE", 
+        "MAX_SIZE", "CHECKPOINT_PERIOD", 
+        "STEPS", "LR",
+        "NUM_WORKERS", "MAX_ITER"]
+        for i,paths in enumerate(cfg_path("cfg",cfg,[])):
+
             if "DATASETS" not in paths:
+                if any([do in paths for do in do_list]):
+                    st.sidebar.markdown("""
+                    <hr style="border:4px solid red"> </hr>
+                    """,unsafe_allow_html=True)
                 val_dict[paths] = st.sidebar.text_input(
                     paths,
                     value=eval(paths)
                 )
+                if any([do in paths for do in do_list]):
+                    st.sidebar.markdown("""
+                    <hr style="border:4px solid red"> </hr>
+                    """,unsafe_allow_html=True)
         
         for key in val_dict:
             if type(eval(key)) == str:
@@ -321,6 +340,7 @@ def training_mode():
     
     train_model_name = st.text_input('Unique model name', f'generic_{model}')
     cfg.ALBUMENTATION_AUG_PATH = None if not augmentation_cfg else os.path.join(aug_path, augmentation_cfg)
+    cfg.BACKGROUND_DIR = None if not background_dir else os.path.join(background_path, background_dir)
     cfg.ANNOT_PATH = selected_annot_path
     cfg.IMAGE_PATH = selected_dataset_path
     cfg.TRAIN_MODEL_NAME = train_model_name

@@ -1,10 +1,10 @@
 modules:
 - config:
     global:
-      output_dir: /home/nizar/Desktop/workspace/pipeBlenderDetectronAlbum/dataset/
+      output_dir: /home/doors/workspace/darwin/detBlendProc/dataset/coco_2/
   module: main.Initializer
 - config:
-    path: /home/nizar/Desktop/workspace/pipeBlenderDetectronAlbum/BlenderProc/examples/coco_annotations/scene.blend
+    path: /home/doors/workspace/darwin/detBlendProc/BlenderProc/examples/coco_annotations/scene.blend
   module: loader.BlendLoader
 - config:
     cf_set_world_category_id: 0
@@ -22,7 +22,7 @@ modules:
     file_format: location rotation/value
     intrinsics:
       fov: 1
-    path: /home/nizar/Desktop/workspace/pipeBlenderDetectronAlbum/BlenderProc/examples/coco_annotations/camera_positions
+    path: /home/doors/workspace/darwin/detBlendProc/BlenderProc/examples/coco_annotations/camera_positions
   module: camera.CameraLoader
 - config:
     output_key: colors

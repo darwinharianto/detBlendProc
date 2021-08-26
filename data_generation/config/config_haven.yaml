@@ -1,10 +1,10 @@
 modules:
 - config:
     global:
-      output_dir: /home/nizar/Desktop/workspace/detBlendPipe/dataset/
+      output_dir: /home/doors/workspace/darwin/detBlendProc/dataset/
   module: main.Initializer
 - config:
-    path: /home/nizar/Desktop/workspace/detBlendPipe/BlenderProc/resources/haven/models/ArmChair_01/ArmChair_01.blend
+    path: /home/doors/workspace/darwin/detBlendProc/BlenderProc/resources/haven/models/ArmChair_01/ArmChair_01.blend
   module: loader.BlendLoader
 - config:
     cf_set_world_category_id: 0
@@ -18,7 +18,7 @@ modules:
       provider: getter.Entity
   module: manipulators.EntityManipulator
 - config:
-    data_path: /home/nizar/Desktop/workspace/detBlendPipe/BlenderProc/resources/haven
+    data_path: /home/doors/workspace/darwin/detBlendProc/BlenderProc/resources/haven
   module: loader.HavenEnvironmentLoader
 - config:
     lights:
@@ -43,7 +43,7 @@ modules:
         - 0
         provider: sampler.PartSphere
         radius: 3
-      number_of_samples: 2
+      number_of_samples: 10
       rotation:
         format: look_at
         value:

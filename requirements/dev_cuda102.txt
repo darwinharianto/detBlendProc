@@ -1,6 +1,6 @@
 -r ../requirements.txt
 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu102/torch1.7/index.html
-detectron2==0.4+cu102
+detectron2==0.5+cu102
 torch==1.7.1
 torchvision==0.8.2
 opencv-contrib-python==4.5.1.48

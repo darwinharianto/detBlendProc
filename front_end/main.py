@@ -1,3 +1,4 @@
+import detectron2
 import streamlit as st
 import numpy as np
 import os
@@ -7,21 +8,35 @@ from PIL import Image
 from pycocotools.coco import COCO
 import numpy as np
 import skimage.io as io
-import matplotlib.pyplot as plt
 import time
 import yaml
 import subprocess
-from glob import glob
-import datetime
 import albumentations as A
 import cv2
-import argparse
-from utils import get_images_list, get_placeholder_params, load_augmentations_config, fill_placeholders, fig2img, get_current_time_down_to_microsec
-from visuals import show_credentials, show_docstring, show_random_params, show_transform_control, get_transformations_params, get_transformations_params_group
-from control import select_checkbox, select_min_max, select_num_interval, select_radio, select_RGB, select_several_nums, replace_none, select_image, select_transformations
+from utils import get_placeholder_params, load_augmentations_config, get_current_time_down_to_microsec
+from visuals import get_transformations_params, get_transformations_params_group
+from control import select_transformations
 from numpy import asarray
 
+def cfg_path(path,my_cfg,res):
+    from detectron2.config import CfgNode
+    for k in my_cfg:
+        if isinstance(my_cfg[k],CfgNode):
+            cfg_path(path+"."+k,my_cfg[k],res)
+        else:
+            res.append(path+"."+k)
 
+    return res
+
+def dict_path(path,my_dict,res):
+    import omegaconf
+    for k in my_dict:
+        if isinstance(my_dict[k],omegaconf.dictconfig.DictConfig):
+            dict_path(path+"."+k,my_dict[k],res)
+        else:
+            res.append(path+"."+k)
+
+    return res
 
 
 def send_command_to_screen(screen_name, command):
@@ -151,14 +166,17 @@ def dataset_sidebar():
     selected_annot_path = os.path.join(selected_dataset_path, json_annot)
     return selected_dataset_path, selected_annot_path
 
-def image_from_mapper(cfg, dataset, metadata):
+def image_from_mapper(cfg, dataset, metadata, lazy_conf=False):
     from kkimgaug.lib.aug_det2 import Mapper
     from detectron2.utils.visualizer import Visualizer
+    from detectron2.data.dataset_mapper import DatasetMapper
     # mapper set
     if cfg.ALBUMENTATION_AUG_PATH is not None:
         mapper = Mapper(cfg, True, config=cfg.ALBUMENTATION_AUG_PATH, is_config_type_official=True)
+    elif lazy_conf:
+        from detectron2.config import instantiate    
+        mapper = instantiate(cfg.dataloader.train.mapper)
     else:
-        from detectron2.data.dataset_mapper import DatasetMapper
         mapper = DatasetMapper(cfg)
 
     mapper_data = mapper(dataset)
@@ -181,8 +199,11 @@ def image_from_mapper(cfg, dataset, metadata):
         elif 'class' in field:
             for instance, cat_id in enumerate(mapper_data['instances'].get(field)):
                 mapper_data['annotations'][instance]['category_id'] = cat_id
-    
+
+
+    mapper_data['annotations'] = [item for item in mapper_data['annotations'] if item != {}]
     out_mapper_annot = visualizer.draw_dataset_dict(mapper_data)
+    
 
     return mapper_img, out_mapper_annot.get_image()
 
@@ -196,7 +217,11 @@ def get_default_head_list():
     from detectron2.modeling.roi_heads import roi_heads
 
     # detectron2 model zoo list
+    # detectron2 version 0.5 need .yaml
+    # detectron2 version 0.3 doesnt need .yaml, i dont know about other versions
     model_list = [model for model in model_zoo.model_zoo._ModelZooUrls.CONFIG_PATH_TO_URL_SUFFIX]
+    if float(detectron2.__version__) > 0.3:
+        model_list = [model + '.yaml'  if 'new_baseline' not in model else model + '.py' for model in model_list]
 
     # detectron2 kpt list
     except_kpt = ['ROI_KEYPOINT_HEAD_REGISTRY', 'build_keypoint_head', 'BaseKeypointRCNNHead']
@@ -238,7 +263,7 @@ def training_mode():
 
     augmentation_cfg = st.sidebar.selectbox(
         'Augmentation',
-        [(item if 'augmentations_src.json' not in item else 'None')  for item in os.listdir(aug_path) if (item.endswith('.json') and ~('src' in item))]
+        [(item if 'augmentations_src.json' not in item else '')  for item in os.listdir(aug_path) if (item.endswith('.json') and ~('src' in item))]
     )
     mode = st.sidebar.selectbox(
         'Detection mode',
@@ -252,121 +277,59 @@ def training_mode():
         model_list
     )
     st.text(f'Selected model: {model}')
-    cfg = get_cfg()
-    cfg.merge_from_file(model_zoo.get_config_file(model))
-    cats = get_ann_details_from_dataset(json_annot=selected_annot_path) 
 
-    train_model_name = st.text_input('Unique model name', f'generic_{model}')
-    output_dir =  st.sidebar.text_input(
-        'Output Directory',
-        value= 'result'
-    )
-    min_size_train = st.sidebar.text_input(
-        'Min input size train',
-        value=(800,)
-    )
-    if type(eval(min_size_train)).__name__ == 'tuple':
-        print("Fine")
+    if model.endswith('.py'):
+        from detectron2.config import LazyConfig
+        cfg = LazyConfig.load(model_zoo.get_config_file("new_baselines/mask_rcnn_regnetx_4gf_dds_FPN_100ep_LSJ.py"))
+
+        val_dict = {}
+        
+        for paths in dict_path("cfg",cfg,[]):
+            
+            if '<' not in str(eval(paths)) and '>' not in str(eval(paths)) and '=' not in str(eval(paths)) and "dataloader" not in paths:
+                val_dict[paths] = st.sidebar.text_input(
+                    paths,
+                    value=eval(paths)
+                )
+        
+        for key in val_dict:
+            if not key.startswith('<'):
+                if type(eval(key)) == str:
+                    exec(f"{key} = '{val_dict[key]}'")
+                elif type(eval(key)) != str:
+                    exec(f"{key} = {eval(val_dict[key])}")
     else:
-        st.sidebar.error('Input Tuple of integer')
-    max_size_train = st.sidebar.text_input(
-        'Max input size train',
-        value=1333
-    )
-    min_size_test = st.sidebar.text_input(
-        'Min input size test',
-        value=800
-    )
-    max_size_test = st.sidebar.text_input(
-        'Max input size test',
-        value=1333
-    )
-    max_iter =  st.sidebar.text_input(
-        'Maximum iteration',
-        value=1000
-    )
-    # model related settings
-    roi_head = st.sidebar.selectbox(
-        'ROI head',
-        roi_head_list,
-        index=roi_head_list.index(cfg.MODEL.ROI_HEADS.NAME)
-    )
+        # what if this contains py?
+        cfg = get_cfg()
+        cfg.merge_from_file(model_zoo.get_config_file(model))
+        cats = get_ann_details_from_dataset(json_annot=selected_annot_path) 
 
-    num_classes = st.sidebar.text_input(
-        'Total classes',
-        value=len(cats)
-    )
-    box_head = st.sidebar.selectbox(
-        'Box head',
-        box_head_list,
-        index=box_head_list.index(cfg.MODEL.ROI_BOX_HEAD.NAME)
-    )
-    mask_head = st.sidebar.selectbox(
-        'Mask head',
-        mask_head_list, 
-        index=mask_head_list.index(cfg.MODEL.ROI_MASK_HEAD.NAME)
-    ) if cfg.MODEL.MASK_ON else mask_head_list[mask_head_list.index(cfg.MODEL.ROI_MASK_HEAD.NAME)]
-    kpt_head = st.sidebar.selectbox(
-        'Keypoint head',
-        keypoint_head_list,
-        index=keypoint_head_list.index(cfg.MODEL.ROI_KEYPOINT_HEAD.NAME)
-    ) if cfg.MODEL.KEYPOINT_ON else keypoint_head_list[keypoint_head_list.index(cfg.MODEL.ROI_KEYPOINT_HEAD.NAME)]
-    num_worker = st.sidebar.text_input(
-        'Number of worker',
-        value=2
-    )
-    ims_per_batch = st.sidebar.text_input(
-        'IMS per batch',
-        value=2
-    )
-    base_lr =  st.sidebar.text_input(
-        'Base Learning Rate',
-        value=0.002
-    )
-    checkpoint_period = st.sidebar.text_input(
-        'Checkpoint period',
-        value = 1000   
-    )
-    vis_period =  st.sidebar.text_input(
-        'Visualize dataset on train period',
-        value = 0
-    )
-    batch_size_per_image =  st.sidebar.text_input(
-        'Batch size per image',
-        value=128
-    )
-    solver_steps = st.sidebar.text_input(
-        'Solver steps',
-        value = cfg.SOLVER.STEPS
-    )
-
-    cfg.ALBUMENTATION_AUG_PATH = None if augmentation_cfg == None else os.path.join(aug_path, augmentation_cfg)
+        val_dict = {}
+        
+        for paths in cfg_path("cfg",cfg,[]):
+            if "DATASETS" not in paths:
+                val_dict[paths] = st.sidebar.text_input(
+                    paths,
+                    value=eval(paths)
+                )
+        
+        for key in val_dict:
+            if type(eval(key)) == str:
+                exec(f"{key} = '{val_dict[key]}'")
+            elif type(eval(key)) != str:
+                exec(f"{key} = {eval(val_dict[key])}")
+    
+    train_model_name = st.text_input('Unique model name', f'generic_{model}')
+    cfg.ALBUMENTATION_AUG_PATH = None if not augmentation_cfg else os.path.join(aug_path, augmentation_cfg)
     cfg.ANNOT_PATH = selected_annot_path
     cfg.IMAGE_PATH = selected_dataset_path
-    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(model)
     cfg.TRAIN_MODEL_NAME = train_model_name
-    cfg.DATASETS.TRAIN = (train_model_name,)
-    cfg.DATASETS.TEST = ()  # no metrics implemented for this dataset
-    cfg.OUTPUT_DIR = output_dir
-    cfg.INPUT.MIN_SIZE_TRAIN = eval(min_size_train)
-    cfg.INPUT.MAX_SIZE_TRAIN = int(max_size_train)
-    cfg.INPUT.MIN_SIZE_TEST = int(min_size_test)
-    cfg.INPUT.MAX_SIZE_TEST = int(max_size_test)
-    cfg.SOLVER.MAX_ITER = int(max_iter)
-    cfg.MODEL.ROI_HEADS.NAME = roi_head
-    cfg.MODEL.ROI_HEADS.NUM_CLASSES = num_classes
-    cfg.MODEL.ROI_MASK_HEAD.NAME = mask_head
-    cfg.MODEL.ROI_KEYPOINT_HEAD.NAME = kpt_head
-    # for now only allows one Class of keypoints
-    cfg.MODEL.ROI_KEYPOINT_HEAD.NUM_KEYPOINTS = len(cats[0]['keypoints']) if cfg.MODEL.KEYPOINT_ON else cfg.MODEL.ROI_KEYPOINT_HEAD.NUM_KEYPOINTS
-    cfg.DATALOADER.NUM_WORKERS = int(num_worker)
-    cfg.SOLVER.IMS_PER_BATCH = int(ims_per_batch)
-    cfg.SOLVER.BASE_LR = float(base_lr)
-    cfg.SOLVER.CHECKPOINT_PERIOD = int(checkpoint_period)
-    cfg.VIS_PERIOD = int(vis_period)
-    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = int(batch_size_per_image)
-    cfg.INPUT.RANDOM_FLIP = "none"
-    cfg.SOLVER.STEPS = solver_steps
+    if "DATASETS" in cfg:
+        cfg.DATASETS.TRAIN = (train_model_name,)
+        cfg.DATASETS.TEST = ()  # no metrics implemented for this dataset
+    elif "dataloader" in cfg:
+        cfg.dataloader.train.dataset.names = train_model_name
+        cfg.dataloader.test.dataset.names = None
 
     # Data Visualization
     # register metadata, then load dataset and metadata
@@ -381,8 +344,7 @@ def training_mode():
     ori_col2.header("Original with annot")
     ori_img_annot_frame = ori_col2.image(ori_with_annot, use_column_width=True) # normal image
 
-
-    mapper_img, mapper_img_annot = image_from_mapper(cfg, dataset_catalog[0], metadata)
+    mapper_img, mapper_img_annot = image_from_mapper(cfg, dataset_catalog[0], metadata, lazy_conf= True if model.endswith('.py') else False)
     map_col1.header("Model input")
     mapper_frame = map_col1.image(mapper_img, use_column_width=True) # mapper image
     map_col2.header("Model input annots")
@@ -404,7 +366,7 @@ def training_mode():
             ori_img_annot_frame.image(ori_with_annot)
 
             # augmented image
-            mapper_img, mapper_img_annot = image_from_mapper(cfg, selected_dataset, metadata)
+            mapper_img, mapper_img_annot = image_from_mapper(cfg, selected_dataset, metadata, lazy_conf= True if model.endswith('.py') else False)
             mapper_frame.image(mapper_img, use_column_width=True)
             mapper_annot_frame.image(mapper_img_annot, use_column_width=True)
             
@@ -412,22 +374,25 @@ def training_mode():
 
     st.subheader("Config files Summary")
     st.text(f"""
-        {cfg}
+        {json.dumps(val_dict, indent=4) if model.endswith('.py') else cfg}
     """)
 
     ### train session?
 
-    os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
+    os.makedirs(cfg.train.output_dir if model.endswith('.py') else  cfg.OUTPUT_DIR, exist_ok=True)
     
     if st.button('Start train', key=None):
         
-        dump_cfg_path = f'./detectron2_cfg/cfg_train_{get_current_time_down_to_microsec()}.yaml'
+        dump_cfg_path = f'./detectron2_cfg/cfg_train_{get_current_time_down_to_microsec()}.py' if model.endswith('.py') \
+                        else f'./detectron2_cfg/cfg_train_{get_current_time_down_to_microsec()}.yaml'
+
+        cfg_str = LazyConfig.to_py(cfg) if model.endswith('.py') else cfg.dump()
         with open(dump_cfg_path, 'w') as f:
-            f.write(cfg.dump())
-        venv_path = os.popen('echo $VIRTUAL_ENV').read().strip()
+            f.write(cfg_str)
+        venv_path = os.popen('which python').read().strip()
 
         screen_name = f'train_model_{get_current_time_down_to_microsec()}'
-        command = f"screen -r {screen_name} -X stuff '{venv_path}/bin/python3 ./front_end/train.py {dump_cfg_path}\n'"
+        command = f"screen -r {screen_name} -X stuff '{venv_path} ./front_end/train.py {dump_cfg_path}\n'"
         send_command_to_screen(screen_name = screen_name, command = command)
 
 
@@ -524,7 +489,6 @@ def inference_mode():
 
             with st_stdout("code"):
                 asd = inference_on_dataset(predictor.model, val_loader, evaluator)
-                print(asd)
             
 
     elif inference_mode == 'Config Dataset':
@@ -600,7 +564,7 @@ def data_gen_mode():
             st.image(random_image)
         else:
             st.warning('Generating process took too long. To see progress, open terminal, type screen -r')
-            venv_path = os.popen('echo $VIRTUAL_ENV').read().strip()
+            venv_path = os.popen('which python').read().strip()
             timer = get_current_time_down_to_microsec()
             screen_name = f'data_generate_{timer}'
 
@@ -608,7 +572,7 @@ def data_gen_mode():
             err_code = process.wait()
             
             if err_code == 0:
-                os.system(f"screen -r {screen_name} -X stuff '{venv_path}/bin/python3 ../BlenderProc/run.py {blend_cfg_file_path}\n'")          
+                os.system(f"screen -r {screen_name} -X stuff '{venv_path} ../BlenderProc/run.py {blend_cfg_file_path}\n'")          
 
 def aug_gen_mode():
     st.title('AUGMENTATION GENERATOR')

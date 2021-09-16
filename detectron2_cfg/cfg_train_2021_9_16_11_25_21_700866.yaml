@@ -1,5 +1,6 @@
-ALBUMENTATION_AUG_PATH: ./augmentations/aug_file.json
+ALBUMENTATION_AUG_PATH: null
 ANNOT_PATH: ./dataset/coco_2/coco_data/coco_annotations.json
+BACKGROUND_DIR: null
 CUDNN_BENCHMARK: false
 DATALOADER:
   ASPECT_RATIO_GROUPING: true
@@ -14,7 +15,7 @@ DATASETS:
   PROPOSAL_FILES_TRAIN: []
   TEST: []
   TRAIN:
-  - generic_COCO-Detection/faster_rcnn_R_50_DC5_1x.yaml
+  - COCO-Detection/faster_rcnn_R_50_C4_1x.yaml
 GLOBAL:
   HACK: 1.0
 IMAGE_PATH: ./dataset/coco_2/coco_data
@@ -100,9 +101,9 @@ MODEL:
     NORM: FrozenBN
     NUM_GROUPS: 1
     OUT_FEATURES:
-    - res5
+    - res4
     RES2_OUT_CHANNELS: 256
-    RES5_DILATION: 2
+    RES5_DILATION: 1
     STEM_OUT_CHANNELS: 64
     STRIDE_IN_1X1: true
     WIDTH_PER_GROUP: 64
@@ -165,11 +166,11 @@ MODEL:
     CLS_AGNOSTIC_BBOX_REG: false
     CONV_DIM: 256
     FC_DIM: 1024
-    NAME: FastRCNNConvFCHead
+    NAME: ''
     NORM: ''
     NUM_CONV: 0
-    NUM_FC: 2
-    POOLER_RESOLUTION: 7
+    NUM_FC: 0
+    POOLER_RESOLUTION: 14
     POOLER_SAMPLING_RATIO: 0
     POOLER_TYPE: ROIAlignV2
     SMOOTH_L1_BETA: 0.0
@@ -177,13 +178,13 @@ MODEL:
   ROI_HEADS:
     BATCH_SIZE_PER_IMAGE: 512
     IN_FEATURES:
-    - res5
+    - res4
     IOU_LABELS:
     - 0
     - 1
     IOU_THRESHOLDS:
     - 0.5
-    NAME: StandardROIHeads
+    NAME: Res5ROIHeads
     NMS_THRESH_TEST: 0.5
     NUM_CLASSES: 80
     POSITIVE_FRACTION: 0.25
@@ -212,7 +213,7 @@ MODEL:
     CONV_DIM: 256
     NAME: MaskRCNNConvUpsampleHead
     NORM: ''
-    NUM_CONV: 4
+    NUM_CONV: 0
     POOLER_RESOLUTION: 14
     POOLER_SAMPLING_RATIO: 0
     POOLER_TYPE: ROIAlignV2
@@ -230,7 +231,7 @@ MODEL:
     - -1
     HEAD_NAME: StandardRPNHead
     IN_FEATURES:
-    - res5
+    - res4
     IOU_LABELS:
     - 0
     - -1
@@ -274,7 +275,7 @@ SOLVER:
     ENABLED: false
     NORM_TYPE: 2.0
   GAMMA: 0.1
-  IMS_PER_BATCH: 16
+  IMS_PER_BATCH: 2
   LR_SCHEDULER_NAME: WarmupMultiStepLR
   MAX_ITER: 90000
   MOMENTUM: 0.9
@@ -311,6 +312,6 @@ TEST:
   PRECISE_BN:
     ENABLED: false
     NUM_ITER: 200
-TRAIN_MODEL_NAME: generic_COCO-Detection/faster_rcnn_R_50_DC5_1x.yaml
+TRAIN_MODEL_NAME: COCO-Detection/faster_rcnn_R_50_C4_1x.yaml
 VERSION: 2
 VIS_PERIOD: 0

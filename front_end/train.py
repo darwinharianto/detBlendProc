@@ -24,7 +24,8 @@ import click
 import json
 import logging
 from PIL import Image
-
+from det2_utils import load_with_fix_lambda_call_on_conv_norm, fix_cfg_settings_for_multiple_or_single_gpu
+from bg_mapper import new_call
 
 class CustomKKTrainer(DefaultTrainer):
 
@@ -64,6 +65,14 @@ def do_train_lazyconf(cfg):
     cfg.optimizer.params.model = model
     optim = instantiate(cfg.optimizer)
 
+    if cfg.ALBUMENTATION_AUG_PATH is not None:
+        from detectron2.config import instantiate    
+        if cfg.ALBUMENTATION_AUG_PATH is not None:
+            cfg.dataloader.train.mapper._target_ = BGMapper
+            cfg.dataloader.train.mapper.background_dir = cfg.BACKGROUND_DIR
+            cfg.dataloader.train.mapper.config = cfg.ALBUMENTATION_AUG_PATH
+            cfg.dataloader.train.mapper.is_config_type_official = True
+            
     train_loader = instantiate(cfg.dataloader.train)
 
     model = create_ddp_model(model, **cfg.train.ddp)
@@ -120,14 +129,16 @@ def hello(cfg_path):
             MetadataCatalog.get(cfg.TRAIN_MODEL_NAME).keypoint_names = annot["categories"][0]['keypoints']
             MetadataCatalog.get(cfg.TRAIN_MODEL_NAME).keypoint_flip_map = []
 
-        print(cfg)
         trainer = CustomKKTrainer(cfg)
         trainer.resume_or_load(resume=False)
         trainer.train()
 
         del trainer
     else:
-        cfg = LazyConfig.load(cfg_path)
+        cfg = load_with_fix_lambda_call_on_conv_norm(cfg_path)
+        cfg = fix_cfg_settings_for_multiple_or_single_gpu(cfg)
+        
+        register_coco_instances(cfg.TRAIN_MODEL_NAME, {}, cfg.ANNOT_PATH, cfg.IMAGE_PATH)
         default_setup(cfg, args= {})
         
         do_train_lazyconf(cfg)

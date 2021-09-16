@@ -18,6 +18,10 @@ from utils import get_placeholder_params, load_augmentations_config, get_current
 from visuals import get_transformations_params, get_transformations_params_group
 from control import select_transformations
 from numpy import asarray
+from det2_utils import change_target_dict_to_value
+
+def example(content, color1="#1aa3ff", color2="#00ff00", color3="#ffffff"):
+     st.sidebar.markdown(f'<p style="text-align:center;background-image: linear-gradient(to right,{color1}, {color2});color:{color3};font-size:24px;border-radius:2%;">{content}</p>', unsafe_allow_html=True)
 
 def cfg_path(path,my_cfg,res):
     from detectron2.config import CfgNode
@@ -169,14 +173,22 @@ def dataset_sidebar():
 
 def image_from_mapper(cfg, dataset, metadata, lazy_conf=False):
     from bg_mapper import BGMapper
+    from bg_mapper import new_call
     from detectron2.utils.visualizer import Visualizer
     from detectron2.data.dataset_mapper import DatasetMapper
     # mapper set
-    if cfg.ALBUMENTATION_AUG_PATH is not None:
-        mapper = BGMapper(cfg, True, background_dir=cfg.BACKGROUND_DIR, config=cfg.ALBUMENTATION_AUG_PATH, is_config_type_official=True)
-    elif lazy_conf:
+    if lazy_conf:
         from detectron2.config import instantiate    
+        if cfg.ALBUMENTATION_AUG_PATH is not None:
+            cfg.dataloader.train.mapper._target_ = BGMapper
+            cfg.dataloader.train.mapper.background_dir = cfg.BACKGROUND_DIR
+            cfg.dataloader.train.mapper.config = cfg.ALBUMENTATION_AUG_PATH
+            cfg.dataloader.train.mapper.is_config_type_official = True
+
         mapper = instantiate(cfg.dataloader.train.mapper)
+
+    elif cfg.ALBUMENTATION_AUG_PATH is not None:
+        mapper = BGMapper(cfg, True, background_dir=cfg.BACKGROUND_DIR, config=cfg.ALBUMENTATION_AUG_PATH, is_config_type_official=True)
     else:
         mapper = DatasetMapper(cfg)
 
@@ -283,18 +295,18 @@ def training_mode():
     )
     st.text(f'Selected model: {model}')
 
+    cats = get_ann_details_from_dataset(json_annot=selected_annot_path) 
     if model.endswith('.py'):
         from detectron2.config import LazyConfig
-        cfg = LazyConfig.load(model_zoo.get_config_file("new_baselines/mask_rcnn_regnetx_4gf_dds_FPN_100ep_LSJ.py"))
-
+        cfg = LazyConfig.load(model_zoo.get_config_file(model))
         val_dict = {}
         
         for paths in dict_path("cfg",cfg,[]):
             
-            if '<' not in str(eval(paths)) and '>' not in str(eval(paths)) and '=' not in str(eval(paths)) and "dataloader" not in paths:
+            if '<' not in str(eval(paths)) and '>' not in str(eval(paths)) and '=' not in str(eval(paths)) and "names" not in paths:
                 val_dict[paths] = st.sidebar.text_input(
                     paths,
-                    value=eval(paths)
+                    value= len(cats) if "num_classes" in paths else eval(paths)
                 )
         
         for key in val_dict:
@@ -307,7 +319,6 @@ def training_mode():
         # what if this contains py?
         cfg = get_cfg()
         cfg.merge_from_file(model_zoo.get_config_file(model))
-        cats = get_ann_details_from_dataset(json_annot=selected_annot_path) 
 
         val_dict = {}
         
@@ -315,9 +326,9 @@ def training_mode():
         "OUTPUT_DIR", "MIN_SIZE", 
         "MAX_SIZE", "CHECKPOINT_PERIOD", 
         "STEPS", "LR",
-        "NUM_WORKERS", "MAX_ITER"]
+        "NUM_WORKERS", "MAX_ITER", "NUM_CLASSES"]
         for i,paths in enumerate(cfg_path("cfg",cfg,[])):
-
+            
             if "DATASETS" not in paths:
                 if any([do in paths for do in do_list]):
                     st.sidebar.markdown("""
@@ -325,7 +336,7 @@ def training_mode():
                     """,unsafe_allow_html=True)
                 val_dict[paths] = st.sidebar.text_input(
                     paths,
-                    value=eval(paths)
+                    value=len(cats) if "NUM_CLASSES" in paths else eval(paths)
                 )
                 if any([do in paths for do in do_list]):
                     st.sidebar.markdown("""
@@ -338,7 +349,7 @@ def training_mode():
             elif type(eval(key)) != str:
                 exec(f"{key} = {eval(val_dict[key])}")
     
-    train_model_name = st.text_input('Unique model name', f'generic_{model}')
+    train_model_name = st.text_input('Unique model name', f'{model}')
     cfg.ALBUMENTATION_AUG_PATH = None if not augmentation_cfg else os.path.join(aug_path, augmentation_cfg)
     cfg.BACKGROUND_DIR = None if not background_dir else os.path.join(background_path, background_dir)
     cfg.ANNOT_PATH = selected_annot_path
@@ -403,12 +414,16 @@ def training_mode():
     
     if st.button('Start train', key=None):
         
-        dump_cfg_path = f'./detectron2_cfg/cfg_train_{get_current_time_down_to_microsec()}.py' if model.endswith('.py') \
+        dump_cfg_path = f'./detectron2_cfg/cfg_train_{get_current_time_down_to_microsec()}.yml' if model.endswith('.py') \
                         else f'./detectron2_cfg/cfg_train_{get_current_time_down_to_microsec()}.yaml'
 
-        cfg_str = LazyConfig.to_py(cfg) if model.endswith('.py') else cfg.dump()
-        with open(dump_cfg_path, 'w') as f:
-            f.write(cfg_str)
+        if model.endswith('.py'):
+            LazyConfig.save(change_target_dict_to_value(cfg, 'conv_norm', None), dump_cfg_path)
+        else:
+            with open(dump_cfg_path, 'w') as f:
+                f.write(cfg.dump())
+
+        
         venv_path = os.popen('which python').read().strip()
 
         screen_name = f'train_model_{get_current_time_down_to_microsec()}'
